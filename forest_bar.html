@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<meta charset="utf-8">
 <html>
 <head>
     <link rel="stylesheet" href = "styles/main.css">  </style>
@@ -203,88 +204,111 @@ html, body {
     /* border: 3px solid green; */
     padding: 10px;'>
     
-        <script src="scripts\d3.v4.min.js"></script>
-        <svg width="1300" height="400"></svg>
+    <script src="https://d3js.org/d3.v4.js"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+    <!-- Create a div where the graph will take place -->
+    <div id="my_dataviz"></div>
 
         <script>
-var svg = d3.select("svg"),
-    margin = {top: 20, right: 80, bottom: 30, left: 50},
-    width = svg.attr("width") - margin.left - margin.right,
-    height = svg.attr("height") - margin.top - margin.bottom,
-    g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+// set the dimensions and margins of the graph
+var margin = {top: 20, right: 30, bottom: 0, left: 10},
+    width = 1300 - margin.left - margin.right,
+    height = 400 - margin.top - margin.bottom;
 
-var parseTime = d3.timeParse("%Y%m%d");
+// append the svg object to the body of the page
+var svg = d3.select("#my_dataviz")
+  .append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
 
-var x = d3.scaleTime().range([0, width]),
-    y = d3.scaleLinear().range([height, 0]),
-    z = d3.scaleOrdinal(d3.schemeCategory10);
+// Parse the Data
+d3.csv("forestcovertop.csv", function(data) {
+  console.log(data);
+  // List of groups = header of the csv files
+  var keys = data.columns.slice(1)
 
-var line = d3.line()
-    .curve(d3.curveBasis)
-    .x(function(d) { return x(d.date); })
-    .y(function(d) { return y(d.forestcover); });
+  // Add X axis
+  var x = d3.scaleLinear()
+    .domain(d3.extent(data, function(d) { return d.year; }))
+    .range([ 0, width ]);
+  svg.append("g")
+    .attr("transform", "translate(0," + height*0.8 + ")")
+    .call(d3.axisBottom(x).tickSize(-height*.7).tickValues([1990, 1995, 2000, 2005,2015]))
+    .select(".domain").remove()
+  // Customization
+  svg.selectAll(".tick line").attr("stroke", "#b8b8b8")
 
-d3.csv("data/forestcovertop.csv", type, function(error, data) {
-  if (error) throw error;
+  // Add X axis label:
+  svg.append("text")
+      .attr("text-anchor", "end")
+      .attr("x", width)
+      .attr("y", height-30 )
+      .text("Time (year)");
 
-  var countries = data.columns.slice(1).map(function(id) {
-    return {
-      id: id,
-      values: data.map(function(d) {
-        return {date: d.date, forestcover: d[id]};
-      })
-    };
-  });
+  // Add Y axis
+  var y = d3.scaleLinear()
+    .domain([-500, 500])
+    .range([ height, 0 ]);
 
-  x.domain(d3.extent(data, function(d) { return d.date; }));  
+  // color palette
+  var color = d3.scaleOrdinal()
+    .domain(keys)
+    .range(d3.schemeDark2);
 
-  y.domain([
-    d3.min(countries, function(c) { return d3.min(c.values, function(d) { return d.forestcover; }); }),
-    d3.max(countries, function(c) { return d3.max(c.values, function(d) { return d.forestcover; }); })
-  ]);
+  //stack the data?
+  var stackedData = d3.stack()
+    .offset(d3.stackOffsetSilhouette)
+    .keys(keys)
+    (data)
 
-  z.domain(countries.map(function(c) { return c.id; }));
-
-  g.append("g")
-      .attr("class", "axis axis--x")
-      .attr("transform", "translate(0," + height + ")")
-      .call(d3.axisBottom(x));
-
-  g.append("g")
-      .attr("class", "axis axis--y")
-      .call(d3.axisLeft(y))
+  // create a tooltip
+  var Tooltip = svg
     .append("text")
-      .attr("transform", "rotate(-90)")
-      .attr("y", 8)
-      .attr("dy", "2em")
-      .attr("fill", "#000")
-      .text("Forest Cover, %");
+    .attr("x", 0)
+    .attr("y", 0)
+    .style("opacity", 0)
+    .style("font-size", 17)
 
-  var country = g.selectAll(".country")
-    .data(countries)
-    .enter().append("g")
-      .attr("class", "country");
+  // Three function that change the tooltip when user hover / move / leave a cell
+  var mouseover = function(d) {
+    Tooltip.style("opacity", 1)
+    d3.selectAll(".myArea").style("opacity", .2)
+    d3.select(this)
+      .style("stroke", "black")
+      .style("opacity", 1)
+  }
+  var mousemove = function(d,i) {
+    grp = keys[i]
+    Tooltip.text(grp)
+  }
+  var mouseleave = function(d) {
+    Tooltip.style("opacity", 0)
+    d3.selectAll(".myArea").style("opacity", 1).style("stroke", "none")
+   }
 
-  country.append("path")
-      .attr("class", "line")
-      .attr("d", function(d) { return line(d.values); })
-      .style("stroke", function(d) { return z(d.id); });
+  // Area generator
+  var area = d3.area()
+    .x(function(d) { return x(d.data.year); })
+    .y0(function(d) { return y(d[0]); })
+    .y1(function(d) { return y(d[1]); })
 
-  country.append("text")
-      .datum(function(d) { return {id: d.id, value: d.values[d.values.length - 1]}; })
-      .attr("transform", function(d) { return "translate(" + x(d.value.date) + "," + y(d.value.forestcover) + ")"; })
-      .attr("x", 3)
-      .attr("dy", "0.35em")
-      .style("font", "10px sans-serif")
-      .text(function(d) { return d.id; });
-});
+  // Show the areas
+  svg
+    .selectAll("mylayers")
+    .data(stackedData)
+    .enter()
+    .append("path")
+      .attr("class", "myArea")
+      .style("fill", function(d) { return color(d.key); })
+      .attr("d", area)
+      .on("mouseover", mouseover)
+      .on("mousemove", mousemove)
+      .on("mouseleave", mouseleave)
 
-function type(d, _, columns) {
-  d.date = parseTime(d.date);
-  for (var i = 1, n = columns.length, c; i < n; ++i) d[c = columns[i]] = +d[c];
-  return d;
-}
-                
+})
         </script> 
 
 
